@@ -2,44 +2,134 @@ const TelegramBot = require('node-telegram-bot-api');
 const XLSX = require('xlsx');
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
-
-const bot = new TelegramBot('7510774911:AAFRh2cPNTXfGVXtkE_5cGCCgi7cGXo8Wbs', { polling: true }); // Replace with your token
+const https = require('https');
+const { log } = require('console');
+const path = require('path');
+const bot = new TelegramBot('7510774911:AAFRh2cPNTXfGVXtkE_5cGCCgi7cGXo8Wbs', { polling: true }); 
+let accessList = new Set(); 
+const adminId = 219764990;
+//1137493485 ID администратора
+bot.on("polling_error", (error) => {
+    console.error("Ошибка в процессе polling:", error.code, error.response?.body || error);
+});
 function readExcelData(filePath) {
-    const workbook = XLSX.readFile(filePath);
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    try {
+        const workbook = XLSX.readFile(filePath);
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-    const result = {};
-    let currentCategory = '';
+        const result = {};
+        let currentCategory = '';
 
-    for (let i = 0; i < data.length; i++) {
-        const row = data[i];
-        if (row[0] && !row[1]) {
-            currentCategory = row[0];
-            result[currentCategory] = [];
-        } else if (currentCategory && row[0]) {
-            const product = {
-                name: row[0],
-                description: row[1],
-                unit: row[2],
-                quantity: row[3] || 0,
-                price: row[4],
-                sum: row[5] || 0,
-            };
-            result[currentCategory].push(product);
+        for (let i = 0; i < data.length; i++) {
+            const row = data[i];
+            if (row[0] && !row[1]) {
+                currentCategory = row[0];
+                result[currentCategory] = [];
+            } else if (currentCategory && row[0]) {
+                const product = {
+                    name: row[0],
+                    description: row[1],
+                    unit: row[2],
+                    quantity: row[3] || 0,
+                    price: row[4],
+                    sum: row[5] || 0,
+                };
+                result[currentCategory].push(product);
+            }
         }
+        return result;
+    } catch (error) {
+        console.error("Ошибка при чтении данных из Excel:", error);
+        return {};
+    }
+}
+bot.onText(/\/admin/, (msg) => {
+    const chatId = msg.chat.id;
+    if (chatId === adminId) { // Проверка chat ID пользователя-администратора
+        // Код для изменения товаров
+        bot.sendMessage(chatId, "Отправьте новый Excel-файл для обновления данных.");
+        
+        // Ожидание отправки документа
+        bot.once('document', async (fileMsg) => {
+            const fileId = fileMsg.document.file_id;
+            const filePath = './updated_file.xlsx';
+
+            try {
+                // Скачиваем файл
+                const fileLink = await bot.getFileLink(fileId);
+                const fileStream = fs.createWriteStream(filePath, { flags: 'wx' });
+                
+                // Сохраняем файл
+                fileStream.on('finish', () => {
+                    bot.sendMessage(chatId, "Файл успешно загружен и обновлен.");
+                    
+                    // Чтение данных из нового Excel файла
+                    const newMaterialsData = readExcelData(filePath);
+                    if (newMaterialsData) {
+                        materialsData = newMaterialsData; // Обновляем данные материалов
+                    }
+                    
+                    // Удаляем файл после использования
+                    fs.unlinkSync(filePath);
+                });
+
+                // Записываем файл из URL
+                https.get(fileLink, (response) => response.pipe(fileStream));
+
+            } catch (error) {
+                console.error("Ошибка при загрузке файла:", error);
+                bot.sendMessage(chatId, "Произошла ошибка при загрузке файла.");
+            }
+        });
+    } else {
+   
+        
+        bot.sendMessage(chatId, "У вас нет прав для выполнения этой команды.");
+    }
+});
+bot.onText(/\/access (.+)/, (msg, match) => {
+    const chatId = msg.chat.id;
+    if (chatId !== adminId) {
+ 
+        return bot.sendMessage(chatId, "У вас нет прав для выполнения этой команды.");
     }
 
-    return result;
+    const args = match[1].split(' ');
+    const [username, action] = args;
+
+    if (action === 'add') {
+        accessList.add(username);
+        bot.sendMessage(chatId, `Пользователь ${username} добавлен в список доступа.`);
+    } else if (action === 'remove') {
+        accessList.delete(username);
+        bot.sendMessage(chatId, `Пользователь ${username} удалён из списка доступа.`);
+    } else {
+        bot.sendMessage(chatId, "Неверная команда. Используйте '/access <ник> add' или '/access <ник> remove'.");
+    }
+});
+
+function checkAccess(username) {
+    return accessList.has(username);
 }
-
-
-const materialsData = readExcelData('./Калькулятор для бота  7 (1).xlsx');
+let materialsData = readExcelData('./Калькулятор для бота  7 (1).xlsx');
 let userData = { products: [] };
+
 
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
+    const username = msg.from.username;
+
+    if (!checkAccess(username)) {
+        return bot.sendMessage(chatId, "У вас нет доступа к этому боту. Обратитесь к администратору.");
+    }
+
+    if (userData[chatId]) { 
+        return bot.sendMessage(chatId, "Вы уже начали работу с ботом. Используйте меню для продолжения.");
+    }
+
+    userData[chatId] = { products: [] }; // Инициализация состояния для пользователя
     bot.sendMessage(chatId, "Добро пожаловать! Для выбора материала нажмите кнопку ниже.");
     askMaterial(chatId);
 });
@@ -54,7 +144,6 @@ function askMaterial(chatId) {
     ];
 
     const buttons = materials.map(material => [{ text: material }]);
-
     bot.sendMessage(chatId, "Выберите материал для забора:", {
         reply_markup: {
             keyboard: buttons,
@@ -64,6 +153,8 @@ function askMaterial(chatId) {
     });
 
     bot.once('message', (msg) => {
+        if (msg.text === '/admin') return;
+
         const selectedMaterial = msg.text;
         if (materials.includes(selectedMaterial)) {
             askProduct(chatId, selectedMaterial);
@@ -76,7 +167,6 @@ function askMaterial(chatId) {
 
 function askProduct(chatId, material) {
     const products = materialsData[material];
-
     const productList = products.map((product, index) => {
         const isBold = /1\.8м|2м/.test(product.name);
         const formattedName = isBold ? `*${product.name}*` : product.name;
@@ -105,42 +195,13 @@ function askProduct(chatId, material) {
     });
 }
 
-
-function askCustomPrice(chatId, product) {
-    bot.sendMessage(chatId, `Введите свою цену для ${product.name}:`);
-    bot.once('message', (msg) => {
-        const price = parseFloat(msg.text);
-        if (!isNaN(price) && price >= 0) {
-            userData.products.push({ ...product, price });
-            askMoreProducts(chatId);
-        } else {
-            bot.sendMessage(chatId, "Введите корректную цену.");
-            askCustomPrice(chatId, product);
-        }
-    });
-}
-
-function askDiscount(chatId) {
-    bot.sendMessage(chatId, "Введите сумму скидки:");
-    bot.once('message', (msg) => {
-        const discount = parseFloat(msg.text);
-        if (!isNaN(discount) && discount >= 0) {
-            userData.discount = discount;
-            askMoreProducts(chatId);
-        } else {
-            bot.sendMessage(chatId, "Введите корректную сумму скидки.");
-            askDiscount(chatId);
-        }
-    });
-}
 function askQuantity(chatId, product) {
     if (product.name === 'Доставка материала' || product.name === 'Доставка откатной' || product.name === 'Наценка') {
-        // If product is one of the first three, allow custom sum input
         bot.sendMessage(chatId, `Введите сумму для ${product.name} (руб.):`);
         bot.once('message', (msg) => {
             const sum = parseFloat(msg.text);
             if (!isNaN(sum) && sum >= 0) {
-                userData.products.push({ ...product, sum });
+                userData[chatId].products.push({ ...product, sum });
                 askMoreProducts(chatId);
             } else {
                 bot.sendMessage(chatId, "Введите корректную сумму.");
@@ -148,12 +209,11 @@ function askQuantity(chatId, product) {
             }
         });
     } else {
-        // For other products, ask for quantity
         bot.sendMessage(chatId, `Введите количество для ${product.name} (единица: ${product.unit}):`);
         bot.once('message', (msg) => {
             const quantity = parseInt(msg.text);
             if (!isNaN(quantity) && quantity > 0) {
-                userData.products.push({ ...product, quantity });
+                userData[chatId].products.push({ ...product, quantity });
                 askMoreProducts(chatId);
             } else {
                 bot.sendMessage(chatId, "Введите корректное количество.");
@@ -162,6 +222,7 @@ function askQuantity(chatId, product) {
         });
     }
 }
+
 function askMoreProducts(chatId) {
     bot.sendMessage(chatId, "Хотите выбрать еще один продукт?", {
         reply_markup: {
@@ -187,35 +248,47 @@ function askMoreProducts(chatId) {
 }
 
 function calculateCost(chatId) {
-    const { products } = userData;
+    const { products } = userData[chatId];
     let totalCost = 0;
 
     products.forEach(product => {
-        if (product.sum) {
-            // If sum is defined, use that for total cost
+        console.log(`Обрабатываем продукт: ${product.name}`);
+        console.log(`Цена: ${product.price}, Количество: ${product.quantity}, Сумма: ${product.sum || Math.round(product.quantity * product.price)}`);
+
+        // Рассчитываем сумму для продукта, если она не была установлена
+        if (!product.sum && !isNaN(product.price) && !isNaN(product.quantity)) {
+            product.sum = Math.round(product.price * product.quantity);  // Устанавливаем округленную сумму
+        }
+
+        // Добавляем сумму к общей стоимости, если она определена
+        if (!isNaN(product.sum)) {
             totalCost += product.sum;
-        } else {
-            totalCost += product.price * product.quantity;
         }
     });
 
     bot.sendMessage(chatId, "Введите сумму скидки (если есть, иначе введите 0):");
     bot.once('message', (msg) => {
-        const discount = parseFloat(msg.text) || 0;
-        totalCost -= discount; // Subtract discount from total cost
+        const discount = Math.round(parseFloat(msg.text) || 0);
+        totalCost -= discount;
 
-        const resultMessage = `Итог:\nВыбранные продукты:\n${products.map(product => 
-            `${product.name} - ${product.sum ? product.sum : product.quantity} ${product.unit} (цена: ${product.price} за ${product.unit})`).join('\n')}\nОбщая стоимость: ${totalCost.toFixed(2)} руб.`;
+        const resultMessage = `Итог:\nВыбранные продукты:\n${products.map(product => {
+            const quantity = product.quantity || '';
+            const pricePerUnit = Math.round(product.price);
+            const totalPrice = Math.round(product.sum || product.quantity * product.price);
+            return `${product.name} - ${quantity} ${product.unit} (цена: ${isNaN(pricePerUnit) ? 'н/д' : pricePerUnit} за ${product.unit}) - ${totalPrice}`;
+        }).join('\n')}` +
+        `\nОбщая стоимость: ${Math.round(totalCost)} руб.` +
+        (discount > 0 ? `\nСкидка: ${discount} руб.` : '');
 
         bot.sendMessage(chatId, resultMessage);
 
-        // Generate PDF and send to user
-        generatePDF(chatId, products, totalCost);
-        userData.products = [];
+        generatePDF(chatId, products, totalCost , discount);
+        delete userData[chatId];
     });
 }
 
-function generatePDF(chatId, products, totalCost) {
+
+function generatePDF(chatId, products, totalCost , discount) {
     const doc = new PDFDocument();
     const filePath = `./invoice_${chatId}.pdf`;
 
@@ -228,48 +301,88 @@ function generatePDF(chatId, products, totalCost) {
 
     doc.fontSize(12);
     const tableTop = doc.y;
-    const itemX = 50;
-    const quantityX = 250;
-    const unitX = 300;
-    const priceX = 350;
-    const sumX = 400;
+    const characteristicsX = 50;
+    const quantityX = 300;
+    const unitX = 350;
+    const priceX = 400;
+    const sumX = 450;
+    const maxRowHeight = 50;
 
     // Заголовок таблицы
-    doc.text('Продукт', itemX, tableTop, { width: 180 });
-    doc.text('Кол-во', quantityX, tableTop, { width: 40 });
-    doc.text('Ед.', unitX, tableTop, { width: 40 });
-    doc.text('Цена', priceX, tableTop, { width: 40 });
-    doc.text('Сумма', sumX, tableTop, { width: 50 });
+    doc.text('Характеристики', characteristicsX, tableTop, { width: 250, align: 'left' });
+    doc.text('Кол-во', quantityX, tableTop, { width: 40, align: 'center' });
+    doc.text('Ед.', unitX, tableTop, { width: 40, align: 'center' });
+    doc.text('Цена', priceX, tableTop, { width: 40, align: 'center' });
+    doc.text('Сумма', sumX, tableTop, { width: 50, align: 'center' });
 
-    doc.moveTo(itemX, tableTop + 15)
+    doc.moveTo(characteristicsX, tableTop + 15)
        .lineTo(sumX + 50, tableTop + 15)
        .stroke();
 
     let positionY = tableTop + 25;
 
+    // Вывод продуктов с учетом длинных характеристик и границ ячеек
     products.forEach(product => {
-        const fullName = `${product.name}${product.description ? ': ' + product.description : ''}`;
-        
-        // Вычисление высоты строки на основе текста
-        const textOptions = { width: 180, height: 50, align: 'left' };
-        const textHeight = doc.heightOfString(fullName, textOptions);
-        
-        doc.text(fullName, itemX, positionY, textOptions);
-        doc.text(product.quantity || '', quantityX, positionY, textOptions);
-        doc.text(product.unit, unitX, positionY, textOptions);
-        doc.text(product.price, priceX, positionY, textOptions);
-        doc.text(product.sum || (product.quantity * product.price).toFixed(2), sumX, positionY, textOptions);
+        const characteristics = `${product.name}${product.description ? ': ' + product.description : ''}`;
+        const textOptions = { width: 250, align: 'left', lineGap: 2 };
 
-        positionY += Math.max(textHeight, 20); // Set a minimum height for rows
+        let lineHeight = doc.heightOfString(characteristics, textOptions);
+        const rowHeight = Math.max(lineHeight, maxRowHeight);
+
+        // Проверка на переполнение страницы
+        if (positionY + rowHeight + 30 > doc.page.height) {  // 30 - это отступ от нижней части страницы
+            doc.addPage();
+            positionY = 50; // Сброс позиции для новой страницы
+            doc.fontSize(12); // Убедитесь, что шрифт и размер установлен
+            // Повторяем заголовки таблицы
+            doc.text('Характеристики', characteristicsX, positionY, { width: 250, align: 'left' });
+            doc.text('Кол-во', quantityX, positionY, { width: 40, align: 'center' });
+            doc.text('Ед.', unitX, positionY, { width: 40, align: 'center' });
+            doc.text('Цена', priceX, positionY, { width: 40, align: 'center' });
+            doc.text('Сумма', sumX, positionY, { width: 50, align: 'center' });
+
+            doc.moveTo(characteristicsX, positionY + 15)
+               .lineTo(sumX + 50, positionY + 15)
+               .stroke();
+            positionY += 20; // Увеличиваем позицию для заголовков
+        }
+
+        // Обрамляем характеристику в границы
+        doc.rect(characteristicsX, positionY - 5, sumX + 50 - characteristicsX, rowHeight + 10).stroke();
+
+        // Проверка на NaN для цены и суммы
+        const displayPrice = isNaN(product.price) ? '-' : Math.round(product.price);
+        const displaySum = isNaN(product.sum) ? '-' : Math.round(product.sum || product.quantity * product.price);
+
+        doc.text(characteristics, characteristicsX, positionY, textOptions);
+        doc.text(product.quantity || '', quantityX, positionY, { width: 40, align: 'center' });
+        doc.text(product.unit, unitX, positionY, { width: 40, align: 'center' });
+        doc.text(displayPrice, priceX, positionY, { width: 40, align: 'center' });
+        doc.text(displaySum, sumX, positionY, { width: 50, align: 'center' });
+
+        positionY += rowHeight + 10;
     });
 
-    doc.moveDown();
-    doc.text(`Общая стоимость: ${totalCost.toFixed(2)} руб.`, { align: 'right' });
+    positionY += 10;
+    doc.moveTo(characteristicsX, positionY)
+       .lineTo(sumX + 50, positionY)
+       .stroke();
+
+    positionY += 10;
+    doc.fontSize(12).text(`Общая стоимость: ${isNaN(totalCost) ? '-' : Math.round(totalCost)} руб.`, sumX - 50, positionY, { align: 'right' });
+    if (discount > 0) {
+        doc.text(`Скидка: ${discount} руб.`, { align: 'right' });
+    }
     doc.end();
 
     writeStream.on('finish', () => {
         bot.sendDocument(chatId, filePath).then(() => {
-            fs.unlinkSync(filePath); // Clean up the generated PDF file
+            fs.unlinkSync(filePath);
         });
     });
 }
+
+
+
+
+
