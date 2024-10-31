@@ -47,35 +47,33 @@ function readExcelData(filePath) {
 }
 bot.onText(/\/admin/, (msg) => {
     const chatId = msg.chat.id;
-    if (chatId === adminId) { // Проверка chat ID пользователя-администратора
-        // Код для изменения товаров
+    if (chatId === adminId) {       
         bot.sendMessage(chatId, "Отправьте новый Excel-файл для обновления данных.");
-        
-        // Ожидание отправки документа
+     
         bot.once('document', async (fileMsg) => {
             const fileId = fileMsg.document.file_id;
             const filePath = './updated_file.xlsx';
 
             try {
-                // Скачиваем файл
+      
                 const fileLink = await bot.getFileLink(fileId);
                 const fileStream = fs.createWriteStream(filePath, { flags: 'wx' });
                 
-                // Сохраняем файл
+       
                 fileStream.on('finish', () => {
                     bot.sendMessage(chatId, "Файл успешно загружен и обновлен.");
                     
-                    // Чтение данных из нового Excel файла
+                 
                     const newMaterialsData = readExcelData(filePath);
                     if (newMaterialsData) {
-                        materialsData = newMaterialsData; // Обновляем данные материалов
+                        materialsData = newMaterialsData;
                     }
                     
-                    // Удаляем файл после использования
+           
                     fs.unlinkSync(filePath);
                 });
 
-                // Записываем файл из URL
+   
                 https.get(fileLink, (response) => response.pipe(fileStream));
 
             } catch (error) {
@@ -129,7 +127,7 @@ bot.onText(/\/start/, (msg) => {
         return bot.sendMessage(chatId, "Вы уже начали работу с ботом. Используйте меню для продолжения.");
     }
 
-    userData[chatId] = { products: [] }; // Инициализация состояния для пользователя
+    userData[chatId] = { products: [] }; 
     bot.sendMessage(chatId, "Добро пожаловать! Для выбора материала нажмите кнопку ниже.");
     askMaterial(chatId);
 });
@@ -255,12 +253,11 @@ function calculateCost(chatId) {
         console.log(`Обрабатываем продукт: ${product.name}`);
         console.log(`Цена: ${product.price}, Количество: ${product.quantity}, Сумма: ${product.sum || Math.round(product.quantity * product.price)}`);
 
-        // Рассчитываем сумму для продукта, если она не была установлена
-        if (!product.sum && !isNaN(product.price) && !isNaN(product.quantity)) {
-            product.sum = Math.round(product.price * product.quantity);  // Устанавливаем округленную сумму
+   if (!product.sum && !isNaN(product.price) && !isNaN(product.quantity)) {
+            product.sum = Math.round(product.price * product.quantity);  
         }
 
-        // Добавляем сумму к общей стоимости, если она определена
+
         if (!isNaN(product.sum)) {
             totalCost += product.sum;
         }
@@ -308,7 +305,7 @@ function generatePDF(chatId, products, totalCost , discount) {
     const sumX = 450;
     const maxRowHeight = 50;
 
-    // Заголовок таблицы
+
     doc.text('Характеристики', characteristicsX, tableTop, { width: 250, align: 'left' });
     doc.text('Кол-во', quantityX, tableTop, { width: 40, align: 'center' });
     doc.text('Ед.', unitX, tableTop, { width: 40, align: 'center' });
@@ -321,7 +318,7 @@ function generatePDF(chatId, products, totalCost , discount) {
 
     let positionY = tableTop + 25;
 
-    // Вывод продуктов с учетом длинных характеристик и границ ячеек
+
     products.forEach(product => {
         const characteristics = `${product.name}${product.description ? ': ' + product.description : ''}`;
         const textOptions = { width: 250, align: 'left', lineGap: 2 };
@@ -329,12 +326,12 @@ function generatePDF(chatId, products, totalCost , discount) {
         let lineHeight = doc.heightOfString(characteristics, textOptions);
         const rowHeight = Math.max(lineHeight, maxRowHeight);
 
-        // Проверка на переполнение страницы
-        if (positionY + rowHeight + 30 > doc.page.height) {  // 30 - это отступ от нижней части страницы
+
+        if (positionY + rowHeight + 30 > doc.page.height) {  
             doc.addPage();
-            positionY = 50; // Сброс позиции для новой страницы
-            doc.fontSize(12); // Убедитесь, что шрифт и размер установлен
-            // Повторяем заголовки таблицы
+            positionY = 50; 
+            doc.fontSize(12); 
+
             doc.text('Характеристики', characteristicsX, positionY, { width: 250, align: 'left' });
             doc.text('Кол-во', quantityX, positionY, { width: 40, align: 'center' });
             doc.text('Ед.', unitX, positionY, { width: 40, align: 'center' });
@@ -344,13 +341,13 @@ function generatePDF(chatId, products, totalCost , discount) {
             doc.moveTo(characteristicsX, positionY + 15)
                .lineTo(sumX + 50, positionY + 15)
                .stroke();
-            positionY += 20; // Увеличиваем позицию для заголовков
+            positionY += 20; 
         }
 
-        // Обрамляем характеристику в границы
+
         doc.rect(characteristicsX, positionY - 5, sumX + 50 - characteristicsX, rowHeight + 10).stroke();
 
-        // Проверка на NaN для цены и суммы
+
         const displayPrice = isNaN(product.price) ? '-' : Math.round(product.price);
         const displaySum = isNaN(product.sum) ? '-' : Math.round(product.sum || product.quantity * product.price);
 
