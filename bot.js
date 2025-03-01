@@ -125,16 +125,29 @@ bot.onText(/\/access (.+)/, (msg, match) => {
 });
 
 function checkAccess(username) {
+ 
+    if (msg.from.id === adminId) {
+        return true;
+    }
+
     return accessList.has(username);
 }
-
 let materialsData = readExcelData('./Калькулятор для бота  7 (1).xlsx');
 let userData = { products: [] };
-
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     const username = msg.from.username;
 
+    // Проверяем, является ли пользователь администратором
+    if (msg.from.id === adminId) {
+        // Администратору всегда доступен бот
+        userData[chatId] = { products: [] };
+        bot.sendMessage(chatId, "Добро пожаловать, администратор! Для выбора материала нажмите кнопку ниже.");
+        askMaterial(chatId);
+        return;
+    }
+
+    // Для остальных пользователей проверяем доступ
     if (!checkAccess(username)) {
         return bot.sendMessage(chatId, "У вас нет доступа к этому боту. Обратитесь к администратору.");
     }
@@ -147,7 +160,6 @@ bot.onText(/\/start/, (msg) => {
     bot.sendMessage(chatId, "Добро пожаловать! Для выбора материала нажмите кнопку ниже.");
     askMaterial(chatId);
 });
-
 
 
 
