@@ -8,10 +8,30 @@ const path = require('path');
 const bot = new TelegramBot('7510774911:AAFRh2cPNTXfGVXtkE_5cGCCgi7cGXo8Wbs', { polling: true }); 
 let accessList = new Set(); 
 const adminId = 219764990;
-//1137493485 ID администратора
+const ACCESS_FILE_PATH = './accessList.json';
+//219764990
+// Загрузка списка доступа при запуске
+loadAccessList();
+
+// Функции для работы с JSON файлом
+function saveAccessList() {
+    const data = JSON.stringify(Array.from(accessList));
+    fs.writeFileSync(ACCESS_FILE_PATH, data);
+}
+
+function loadAccessList() {
+    if (fs.existsSync(ACCESS_FILE_PATH)) {
+        const data = fs.readFileSync(ACCESS_FILE_PATH, 'utf8');
+        accessList = new Set(JSON.parse(data));
+    } else {
+        accessList = new Set();
+    }
+}
+
 bot.on("polling_error", (error) => {
     console.error("Ошибка в процессе polling:", error.code, error.response?.body || error);
 });
+
 function readExcelData(filePath) {
     try {
         const workbook = XLSX.readFile(filePath);
@@ -45,6 +65,7 @@ function readExcelData(filePath) {
         return {};
     }
 }
+
 bot.onText(/\/admin/, (msg) => {
     const chatId = msg.chat.id;
     if (chatId === adminId) {       
@@ -55,25 +76,20 @@ bot.onText(/\/admin/, (msg) => {
             const filePath = './updated_file.xlsx';
 
             try {
-      
                 const fileLink = await bot.getFileLink(fileId);
                 const fileStream = fs.createWriteStream(filePath, { flags: 'wx' });
                 
-       
                 fileStream.on('finish', () => {
                     bot.sendMessage(chatId, "Файл успешно загружен и обновлен.");
                     
-                 
                     const newMaterialsData = readExcelData(filePath);
                     if (newMaterialsData) {
                         materialsData = newMaterialsData;
                     }
                     
-           
                     fs.unlinkSync(filePath);
                 });
 
-   
                 https.get(fileLink, (response) => response.pipe(fileStream));
 
             } catch (error) {
@@ -82,15 +98,13 @@ bot.onText(/\/admin/, (msg) => {
             }
         });
     } else {
-   
-        
         bot.sendMessage(chatId, "У вас нет прав для выполнения этой команды.");
     }
 });
+
 bot.onText(/\/access (.+)/, (msg, match) => {
     const chatId = msg.chat.id;
     if (chatId !== adminId) {
- 
         return bot.sendMessage(chatId, "У вас нет прав для выполнения этой команды.");
     }
 
@@ -99,9 +113,11 @@ bot.onText(/\/access (.+)/, (msg, match) => {
 
     if (action === 'add') {
         accessList.add(username);
+        saveAccessList();
         bot.sendMessage(chatId, `Пользователь ${username} добавлен в список доступа.`);
     } else if (action === 'remove') {
         accessList.delete(username);
+        saveAccessList();
         bot.sendMessage(chatId, `Пользователь ${username} удалён из списка доступа.`);
     } else {
         bot.sendMessage(chatId, "Неверная команда. Используйте '/access <ник> add' или '/access <ник> remove'.");
@@ -111,9 +127,9 @@ bot.onText(/\/access (.+)/, (msg, match) => {
 function checkAccess(username) {
     return accessList.has(username);
 }
+
 let materialsData = readExcelData('./Калькулятор для бота  7 (1).xlsx');
 let userData = { products: [] };
-
 
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
@@ -131,6 +147,9 @@ bot.onText(/\/start/, (msg) => {
     bot.sendMessage(chatId, "Добро пожаловать! Для выбора материала нажмите кнопку ниже.");
     askMaterial(chatId);
 });
+
+
+
 
 function askMaterial(chatId) {
     const materials = [
