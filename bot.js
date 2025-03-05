@@ -124,12 +124,17 @@ bot.onText(/\/access (.+)/, (msg, match) => {
     }
 });
 
-function checkAccess(username) {
- 
+function checkAccess(msg, username) {
+    if (!msg.from) {
+        return false;
+    }
+
+    // Проверяем, является ли пользователь администратором
     if (msg.from.id === adminId) {
         return true;
     }
 
+    // Проверяем, есть ли пользователь в списке доступа
     return accessList.has(username);
 }
 let materialsData = readExcelData('./Калькулятор для бота  7 (1).xlsx');
@@ -161,6 +166,9 @@ bot.onText(/\/start/, (msg) => {
     askMaterial(chatId);
 });
 
+function checkAccess(username) {
+    return accessList.has(username);
+}
 
 
 function askMaterial(chatId) {
